@@ -1,0 +1,16 @@
+# Machine Learning
+tensorflow
+
+# Data processing & scientific
+numpy
+scipy
+
+# Plotting
+matplotlib
+seaborn
+
+# Metrics
+scikit-learn
+
+# Seismology
+obspy
