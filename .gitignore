@@ -1,0 +1,77 @@
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Environment
+.env
+.venv/
+env/
+venv/
+ENV/
+*.env
+
+# Colab notebooks temporary
+*.ipynb_output.*
+
+# Python virtual environment
+*.egg-info/
+dist/
+build/
+
+# VSCode
+.vscode/
+
+# macOS
+.DS_Store
+
+# Model files and outputs
+
+*.hdf5
+*.ckpt
+*.pb
+*.pt
+*.pth
+*.tflite
+*.onnx
+logs/
+checkpoints/
+runs/
+output/
+models/
+
+# Data
+*.csv
+*.tsv
+*.tar.gz
+*.npy
+*.npz
+*.mseed
+*.sac
+data/
+dataset/
+*.jpg
+*.jpeg
+*.bmp
+spectrograms/
+augmented_data/
+earthquake/
+noise/
+full_spectrogram/
+waveforms/
+result/
+
+# TensorBoard
+events.out.tfevents.*
+
+# PyCharm
+.idea/
+
+# System files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
