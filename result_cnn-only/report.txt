@@ -1,0 +1,18 @@
+✅ Total test frames: 17207
+WARNING:absl:Compiled the loaded model, but the compiled metrics have yet to be built. `model.compile_metrics` will be empty until you train or evaluate the model.
+✅ Model loaded!
+538/538 ━━━━━━━━━━━━━━━━━━━━ 47s 87ms/step
+✅ Ground truth sequences: 616
+✅ Total sequences after fill: 616
+
+📊 Classification Report:
+              precision    recall  f1-score   support
+
+       Noise       0.64      0.60      0.62       308
+  Earthquake       0.63      0.67      0.65       308
+
+    accuracy                           0.63       616
+   macro avg       0.64      0.63      0.63       616
+weighted avg       0.64      0.63      0.63       616
+
+🔬 ROC AUC (mean prob backup): 0.9827

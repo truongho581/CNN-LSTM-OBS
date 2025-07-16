@@ -2,7 +2,7 @@ from PIL import Image
 import glob
 import os
 
-def resize_images(folder, size=(128, 128)):
+def resize_images(folder, size=(64, 64)):
     image_paths = glob.glob(os.path.join(folder, "**", "*.png"), recursive=True)
     print(f"📁 Đang xử lý {len(image_paths)} ảnh trong '{folder}' (bao gồm subfolders)")
 
