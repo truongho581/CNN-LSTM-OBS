@@ -64,6 +64,7 @@ noise/
 full_spectrogram/
 waveforms/
 result/
+result_cnn-only/
 
 # TensorBoard
 events.out.tfevents.*
