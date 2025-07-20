@@ -37,9 +37,12 @@ def is_interval_safe(start, duration=180):
 # === Hàm vẽ spectrogram FULL waveform ===
 def plot_full_spectrogram(tr, label, index):
     fs = tr.stats.sampling_rate
-    f, t, Sxx = spectrogram(tr.data, fs=fs, nperseg=256, noverlap=128)
+    nperseg = int(5.12 * fs)  # ví dụ: 5.12s → 256 tại fs=50Hz
+    noverlap = int(0.5 * nperseg)
+
+    f, t, Sxx = spectrogram(tr.data, fs=fs, nperseg=nperseg, noverlap=noverlap)
     power_db = 10 * np.log10(Sxx + 1e-10)
-    f_mask = f <= 10
+    f_mask = (f >= 2) & (f <= 10)
     f = f[f_mask]
     power_db = power_db[f_mask, :]
 
@@ -55,27 +58,33 @@ def plot_full_spectrogram(tr, label, index):
                 bbox_inches='tight', pad_inches=0.1)
     plt.close()
 
+
 # === Hàm vẽ 1 frame ===
 def plot_frame_spectrogram_fixed(segment, fs, segment_length, save_path):
-    safe_nperseg = min(256, int(len(segment) / 2))
+    safe_nperseg = min(256, int(len(segment) * 0.5))
     safe_noverlap = int(0.5 * safe_nperseg)
 
     f, t, Sxx = spectrogram(segment, fs=fs, nperseg=safe_nperseg, noverlap=safe_noverlap)
     power_db = 10 * np.log10(Sxx + 1e-10)
-    f_mask = f <= 10
+
+    f_mask = (f >= 2) & (f <= 10)  # 👈 chỉ giữ tần số 2–10Hz
     f = f[f_mask]
     power_db = power_db[f_mask, :]
+
+    if np.max(power_db) < -40:
+        return False  # 👈 bỏ nếu quá yên tĩnh
 
     fig, ax = plt.subplots(figsize=(6, 4))
     t_uniform = np.linspace(0, segment_length, power_db.shape[1])
     ax.pcolormesh(t_uniform, f, power_db, shading='gouraud',
-                  cmap='inferno', vmin=-80, vmax=60)  # ✅ Clamp scale cứng
+                  cmap='inferno', vmin=-80, vmax=60)
     ax.axis('off')
     for spine in ax.spines.values():
         spine.set_visible(False)
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
     plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
     plt.close()
+    return True
 
 # === LOOP XỬ LÝ 1 EVENT ===
 for i, event in enumerate(catalog):
@@ -86,11 +95,10 @@ for i, event in enumerate(catalog):
         st = client.get_waveforms(
             network=NETWORK, station=STATION, location=LOCATION, channel=CHANNEL,
             starttime=origin_time - 60,
-            endtime=origin_time + 600
+            endtime=origin_time + 420
         )
         st.detrend("demean")
         st.filter("bandpass", freqmin=1, freqmax=10)
-
         st.write(f"waveforms/{STATION}_event_{i:03}.mseed", format="MSEED")
 
         tr = st[0]
@@ -100,7 +108,7 @@ for i, event in enumerate(catalog):
         segment_length = 5  # giây
         segment_samples = int(segment_length * fs)
 
-        # === Tính avg_power toàn waveform ===
+        # === Tính năng lượng trung bình toàn waveform ===
         avg_power_list = []
         for j in range(200):
             start_idx = j * segment_samples
@@ -109,24 +117,24 @@ for i, event in enumerate(catalog):
                 break
 
             segment = tr.data[start_idx:end_idx]
-            safe_nperseg = min(256, int(len(segment) / 2))
-            f, t, Sxx = spectrogram(segment, fs=fs, nperseg=safe_nperseg, noverlap=int(0.5 * safe_nperseg))
-            power_db = 10 * np.log10(Sxx + 1e-10)
-            avg_power = np.mean(power_db)
-            avg_power_list.append(avg_power)
+            energy = np.mean(segment ** 2)
+            power_db = 10 * np.log10(energy + 1e-10)
+            avg_power_list.append(power_db)
 
-            print(f"[EQ {i}, Segment {j}] Avg Power: {avg_power:.2f} dB")
+            print(f"[EQ {i}, Segment {j}] Avg Power: {power_db:.2f} dB")
 
         # === Tính noise_mean ===
-        pre_event_idx = int(60 / segment_length)  # 60s trước origin_time
+        pre_event_idx = int(60 / segment_length)
         noise_only = avg_power_list[:pre_event_idx]
         noise_mean = np.mean(noise_only)
         print(f"📊 Noise mean (trước origin_time): {noise_mean:.2f} dB")
 
         # === Tham số trigger ===
         trigger_threshold = noise_mean + 6
-        margin = 5
+        margin = 6
         trigger_window = 3
+        max_frame_after_trigger = 40  # 🔴 Giới hạn frame sau trigger
+
         triggered = False
         window_count = 0
         weak_count = 0
@@ -144,9 +152,8 @@ for i, event in enumerate(catalog):
                     if window_count >= trigger_window:
                         triggered = True
                         trigger_start = j - (trigger_window - 1)
-                        print(f"✅ Trigger ON tại segment {j} ➜ bắt đầu từ seg {trigger_start}")
+                        print(f"✅ Trigger ON tại segment {j} ➜ lưu từ segment {trigger_start}")
 
-                        # Lưu các seg trước đó
                         for k in range(trigger_start, j + 1):
                             if k < 0: continue
                             start_idx = k * segment_samples
@@ -157,10 +164,12 @@ for i, event in enumerate(catalog):
                                 os.makedirs(seq_dir, exist_ok=True)
 
                             frame_count += 1
+                            if frame_count > max_frame_after_trigger:
+                                print(f"🛑 Đã đủ {max_frame_after_trigger} frame, dừng lưu.")
+                                break
+
                             frame_name = f"{seq_dir}/frame_{frame_count:03}.png"
                             plot_frame_spectrogram_fixed(segment, fs, segment_length, frame_name)
-                            print(f"✅ Lưu seg {k} ➜ {frame_name}")
-
                 else:
                     window_count = 0
                 continue
@@ -169,15 +178,11 @@ for i, event in enumerate(catalog):
             if avg_power < (noise_mean + margin):
                 weak_count += 1
                 print(f"⚠️ Segment {j} yếu ({avg_power:.2f} dB) → weak_count={weak_count}")
-
                 if weak_count >= 3:
                     print(f"⏹️ Dừng tại segment {j} vì gặp {weak_count} seg yếu liên tiếp")
                     break
-
-                # ⚡ Không lưu seg yếu
-
             else:
-                weak_count = 0  # Seg mạnh → reset
+                weak_count = 0
                 start_idx = j * segment_samples
                 end_idx = start_idx + segment_samples
                 if end_idx > len(tr.data):
@@ -189,9 +194,12 @@ for i, event in enumerate(catalog):
                     os.makedirs(seq_dir, exist_ok=True)
 
                 frame_count += 1
+                if frame_count > max_frame_after_trigger:
+                    print(f"🛑 Đã đủ {max_frame_after_trigger} frame, dừng lưu.")
+                    break
+
                 frame_name = f"{seq_dir}/frame_{frame_count:03}.png"
                 plot_frame_spectrogram_fixed(segment, fs, segment_length, frame_name)
-                print(f"✅ Lưu seg {j} ➜ {frame_name}")
 
         if frame_count == 0:
             print(f"⚠️ Event {i} không đủ tín hiệu mạnh.")
@@ -201,7 +209,6 @@ for i, event in enumerate(catalog):
 
     except Exception as e:
         print(f"❌ Lỗi với Event {i}: {e}")
-
 
 
 
@@ -240,8 +247,8 @@ for i in range(num_noise_samples):
         segment_samples = int(segment_length * fs)
 
         # === Random length noise sample
-        min_len = 10      
-        max_len = 60      
+        min_len = 0      
+        max_len = 40      
         length = random.randint(min_len, max_len)
 
         frame_count = 0
@@ -260,7 +267,9 @@ for i in range(num_noise_samples):
             segment = tr.data[start_idx:end_idx]
             frame_count += 1
             frame_name = f"{seq_dir}/frame_{frame_count:03}.png"
-            plot_frame_spectrogram_fixed(segment, fs, segment_length, frame_name)
+            ok = plot_frame_spectrogram_fixed(segment, fs, segment_length, frame_name)
+            if not ok:
+                continue  # ❌ Bỏ nếu frame quá yên tĩnh
 
         if frame_count == 0:
             print(f"⚠️ Noise {i} không đủ dữ liệu, skip.")
