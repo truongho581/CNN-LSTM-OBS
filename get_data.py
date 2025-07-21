@@ -175,7 +175,7 @@ for i, event in enumerate(catalog):
                 continue
 
             # === Nếu đã Trigger ON ===
-            if avg_power < (noise_mean + margin):
+            if avg_power <= (noise_mean + margin):
                 weak_count += 1
                 print(f"⚠️ Segment {j} yếu ({avg_power:.2f} dB) → weak_count={weak_count}")
                 if weak_count >= 3:
@@ -222,7 +222,7 @@ print(f"\n---🔍 Bắt đầu tạo {num_noise_samples} sample noise ---")
 for i in range(num_noise_samples):
     try:
         # === Tìm vùng noise hợp lệ
-        for _ in range(50):  # Thử nhiều hơn để đỡ 204
+        for _ in range(50):  # Thử nhiều hơn để đỡ lỗi
             event = random.choice(catalog)
             origin_time = event.origins[0].time
             rand_offset = random.uniform(1200, 3600)  # 20–60 phút sau EQ
@@ -247,7 +247,7 @@ for i in range(num_noise_samples):
         segment_samples = int(segment_length * fs)
 
         # === Random length noise sample
-        min_len = 0      
+        min_len = 5      
         max_len = 40      
         length = random.randint(min_len, max_len)
 

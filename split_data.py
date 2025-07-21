@@ -29,8 +29,8 @@ def split_data(source_dir, train_dir, val_dir, val_ratio=0.2, seed=42):
     print(f"✅ {len(train_samples)} samples train, {len(val_samples)} samples val cho {os.path.basename(source_dir)}")
 
 # Đường dẫn thư mục ảnh gốc (chưa chia)
-#split_data(f"earthquake", "data/train/earthquake", "data/val/earthquake")
-#split_data(f"noise", "data/train/noise", "data/val/noise")
+# split_data(f"earthquake", "data/train/earthquake", "data/val/earthquake")
+# split_data(f"noise", "data/train/noise", "data/val/noise")
 
 
 def create_test_set(source_dir, test_dir, num_test=50, seed=42):
@@ -51,6 +51,6 @@ def create_test_set(source_dir, test_dir, num_test=50, seed=42):
     print(f"✅ Đã tạo {len(test_samples)} samples test cho {os.path.basename(source_dir)}")
 
 # Dùng cho 2 lớp
-create_test_set("earthquake", "data/test/earthquake", num_test=308)
-create_test_set("noise", "data/test/noise", num_test=308)
+create_test_set("earthquake", "data/test/earthquake", num_test=148)
+create_test_set("noise", "data/test/noise", num_test=148)
 
