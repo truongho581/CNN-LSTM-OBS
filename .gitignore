@@ -65,6 +65,8 @@ full_spectrogram/
 waveforms/
 result/
 result_cnn-only/
+result_cnn_only_frame_level_flatten/
+result_frame_level_flatten/
 
 # TensorBoard
 events.out.tfevents.*
