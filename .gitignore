@@ -67,6 +67,7 @@ result/
 result_cnn-only/
 result_cnn_only_frame_level_flatten/
 result_frame_level_flatten/
+samples/
 
 # TensorBoard
 events.out.tfevents.*

@@ -6,7 +6,7 @@ from obspy import UTCDateTime
 client = Client("IRIS")
 
 # Các thông tin cho trạm OBS
-time = ['2013-08-19', '2014-05-29']
+time = ['2012-09-02', '2013-06-18']
 start_time = UTCDateTime(time[0])
 end_time = UTCDateTime(time[1])
 NETWORK = "7D"
@@ -40,7 +40,7 @@ LOCATION = "--"
 ##station_data = ['M02A', 48.3070, -125.6004, -139.0]  # '2011-10-18', '2012-07-16'
 
 # # Trạm để lấy data test
-#station_data = ['M12B', 42.1840, -124.9461, -1045.0]  # '2012-09-02', '2013-06-18'
+station_data = ['M12B', 42.1840, -124.9461, -1045.0]  # '2012-09-02', '2013-06-18'
 #station_data = ['M14B', 40.9850, -124.5897, -638.0]  # '2012-09-02', '2013-06-19'
 #station_data = ['M16D', 41.6618, -124.8071, -882.0]  # '2014-08-12', '2015-09-17'
 #station_data = ['G33D', 42.6653, -124.8020, -686.0]  # '2014-08-12', '2015-09-17'
