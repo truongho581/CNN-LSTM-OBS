@@ -19,7 +19,7 @@ VMIN = -80
 VMAX = 60
 TARGET_SIZE = (512, 256)
 
-os.makedirs("spectrogram_out", exist_ok=True)
+os.makedirs("full_spectrogram", exist_ok=True)
 
 # ==== Catalog sự kiện ====
 catalog = client.get_events(starttime=start_time, endtime=end_time,
