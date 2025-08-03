@@ -3,9 +3,8 @@ import re
 import numpy as np
 from obspy.clients.fdsn import Client
 from obspy import UTCDateTime, Trace
-from obspy.geodetics.base import gps2dist_azimuth, kilometers2degrees
-from obspy.taup import TauPyModel
 from scipy.signal import spectrogram
+from obspy.signal.trigger import classic_sta_lta, trigger_onset
 from PIL import Image, ImageDraw
 
 # ==== Config ====
@@ -16,11 +15,7 @@ TARGET_SIZE = (512, 256)
 os.makedirs("full_spectrogram", exist_ok=True)
 
 MIN_MAGNITUDE = 3
-MAX_RADIUS = 2.0
-
-# TauP model và offset hiệu chỉnh
-model = TauPyModel(model="iasp91")
-P_OFFSET = 10 # dịch P-arrival sớm hơn 1.5 giây
+MAX_RADIUS = 1.5
 
 # ==== Đọc file station metadata ====
 stations = []
@@ -61,32 +56,15 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
     for i, event in enumerate(catalog):
         origin = event.origins[0]
         origin_time = origin.time
-        eq_lat = origin.latitude
-        eq_lon = origin.longitude
-        eq_depth = origin.depth / 1000.0  # km
 
         try:
-            # ==== Tính P-arrival bằng TauP + offset ====
-            dist_m, az, baz = gps2dist_azimuth(lat_sta, lon_sta, eq_lat, eq_lon)
-            dist_deg = kilometers2degrees(dist_m / 1000.0)
-            arrivals = model.get_travel_times(source_depth_in_km=eq_depth,
-                                              distance_in_degree=dist_deg,
-                                              phase_list=["P"])
-            if arrivals:
-                p_travel = arrivals[0].time
-                p_arrival = origin_time + p_travel - P_OFFSET
-            else:
-                p_arrival = origin_time
-
-            print(f"Event {i}: Origin={origin_time}, P-arrival={p_arrival} (Offset {P_OFFSET}s)")
-
             # ==== Load waveform ====
             st = client.get_waveforms(NETWORK, STATION, LOCATION, "BH?",
                                       starttime=origin_time - 60,
                                       endtime=origin_time + 420)
 
             st.detrend("demean")
-            st.filter("bandpass", freqmin=1, freqmax=10)
+            st.filter("bandpass", freqmin=2, freqmax=8)  # filter hẹp hơn để P rõ hơn
             for tr in st:
                 tr.data = tr.data.astype(np.float64)
                 std = np.std(tr.data)
@@ -107,8 +85,24 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
 
             fs = trZ.stats.sampling_rate
 
+            # ==== Lấy 60 giây sau origin để tìm P bằng STA/LTA ====
+            tr_cut = trZ.copy().trim(starttime=origin_time, endtime=origin_time + 60)
+
+            sta_win = int(0.25 * fs)    # 0.5 giây ~ 25 mẫu @ 50Hz
+            lta_win = int(10 * fs)     # 10 giây ~ 500 mẫu
+            cft = classic_sta_lta(tr_cut.data, sta_win, lta_win)
+            trigs = trigger_onset(cft, 2.2, 1.0)
+
+            if len(trigs) > 0:
+                onset_sample = trigs[0][0]
+                p_arrival = tr_cut.stats.starttime + onset_sample / fs
+                print(f"Event {i}: P-onset STA/LTA = {p_arrival}")
+            else:
+                p_arrival = origin_time
+                print(f"Event {i}: Không thấy trigger, dùng Origin = {p_arrival}")
+
             # ==== Spectrogram ====
-            specZ, t_axis = compute_spec(trZ, fs)
+            specZ, _ = compute_spec(trZ, fs)
             specN, _ = compute_spec(trN, fs)
             specE, _ = compute_spec(trE, fs)
             spec_stack = np.stack([specZ, specN, specE], axis=-1)
@@ -125,26 +119,34 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
             spec_stack = spec_stack[::-1, :, :]
             spec_resized = np.array(Image.fromarray(spec_stack).resize(TARGET_SIZE))
 
-            # ==== Vẽ P-arrival ====
+            # ==== Vẽ Origin (đỏ) và P-onset (xanh) ====
             window_start = origin_time - 60
-            offset_sec = p_arrival - window_start
             total_duration = 480.0
-            p_x = int((offset_sec / total_duration) * TARGET_SIZE[0])
 
-            # RGB
+            # Origin line
+            offset_origin = origin_time - window_start
+            o_x = int((offset_origin / total_duration) * TARGET_SIZE[0])
+
+            # P-onset line
+            offset_p = p_arrival - window_start
+            p_x = int((offset_p / total_duration) * TARGET_SIZE[0])
+
+            # Vẽ trên ảnh RGB
             img_rgb = Image.fromarray(spec_resized)
             draw_rgb = ImageDraw.Draw(img_rgb)
-            draw_rgb.line([(p_x, 0), (p_x, TARGET_SIZE[1])], fill=(0, 255, 0), width=2)
+            draw_rgb.line([(o_x, 0), (o_x, TARGET_SIZE[1])], fill=(255, 0, 0), width=2)  # đỏ = Origin
+            draw_rgb.line([(p_x, 0), (p_x, TARGET_SIZE[1])], fill=(0, 255, 0), width=2)  # xanh = P-onset
             img_rgb.save(f"full_spectrogram/{STATION}_eq_{i:03}_CRED_RGB_P.png")
 
-            # Từng kênh
+            # Vẽ trên từng kênh riêng
             for idx, ch in enumerate(["BHZ", "BHN", "BHE"]):
                 img_ch = Image.fromarray(spec_resized[:, :, idx])
                 draw_ch = ImageDraw.Draw(img_ch)
-                draw_ch.line([(p_x, 0), (p_x, TARGET_SIZE[1])], fill=255, width=2)
+                draw_ch.line([(o_x, 0), (o_x, TARGET_SIZE[1])], fill=128, width=2)  # Origin xám
+                draw_ch.line([(p_x, 0), (p_x, TARGET_SIZE[1])], fill=255, width=2)  # P-onset trắng
                 img_ch.save(f"full_spectrogram/{STATION}_eq_{i:03}_{ch}_P.png")
 
-            print(f"✅ Saved {STATION} event {i} spectrogram with P-arrival line")
+            print(f"✅ Saved {STATION} event {i} spectrogram (Origin+P-onset lines)")
 
         except Exception as e:
             print(f"❌ Lỗi {STATION} event {i}: {e}")
