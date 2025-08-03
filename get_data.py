@@ -16,32 +16,27 @@ TARGET_SIZE = (512, 256)
 os.makedirs("full_spectrogram", exist_ok=True)
 
 MIN_MAGNITUDE = 3
-MAX_RADIUS = 1.5
+MAX_RADIUS = 2
 
 # ==== TauP model ====
 taup_model = TauPyModel(model="iasp91")
 
 # ==== Hàm hiệu chỉnh Cascadia tuyến tính ====
 def cascadia_correction(p_theo, origin_time, dist_deg):
-    """
-    Hiệu chỉnh P-arrival theo khoảng cách bằng hàm tuyến tính.
-    Đảm bảo không bao giờ lùi qua origin_time.
-    - Ở 1.0°: offset = -12s
-    - Ở 0.0°: offset = 0s (không dịch)
-    """
-
-    # Fit tuyến tính từ (0.0°, 0s) đến (1.0°, -12s)
-    a = (-12.0 - 0.0) / (1.0 - 0.0)   # slope
-    b = 0.0                           # intercept
-
-    offset = a * dist_deg + b
-    # Giới hạn offset tối đa (tránh offset quá lớn cho khoảng cách xa)
-    offset = max(offset, -20.0)
+    if dist_deg <= 1.0:
+        # 0° → 0s ; 1° → -12s
+        a = (-12.0 - 0.0) / 1.0
+        offset = a * dist_deg
+    else:
+        # 1.0° → -12s ; 1.5° → -12.3s (độ dốc nhẹ hơn)
+        a = (-12.3 - -12.0) / (1.5 - 1.0)
+        offset = -12.0 + a * (dist_deg - 1.0)
 
     p_corr = p_theo + offset
     if p_corr < origin_time:
         p_corr = origin_time
     return p_corr
+
 
 # ==== Đọc file station metadata ====
 stations = []
@@ -53,10 +48,14 @@ with open("obs_orientation_metadata_updated.txt", "r") as f:
         end = parts[2].split(": ")[1]
         lat = float(parts[3].split(": ")[1])
         lon = float(parts[4].split(": ")[1])
+        depth = float(parts[5].split(": ")[1])   # 👈 lấy depth nếu có
         bh1_str = parts[6].split(": ")[1].strip()
         bh1_clean = re.sub(r"[^0-9.\-]", "", bh1_str)
         bh1 = float(bh1_clean) if bh1_clean else 0.0
-        stations.append((st, start, end, lat, lon, bh1))
+
+        if depth < -500:
+            stations.append((st, start, end, lat, lon, bh1))
+
 
 # ==== Hàm tạo spectrogram ====
 def compute_spec(tr, fs):

@@ -7,6 +7,7 @@ from obspy import UTCDateTime, Trace
 from obspy.taup import TauPyModel
 from obspy.geodetics import locations2degrees
 
+# ==== Config ====
 client = Client("IRIS")
 NETWORK = "7D"
 LOCATION = "--"
@@ -14,32 +15,28 @@ base_dir = "data"
 os.makedirs(base_dir, exist_ok=True)
 
 MIN_MAGNITUDE = 3
-MAX_RADIUS = 1.5
+MAX_RADIUS = 2
 
 # ==== TauP model ====
 taup_model = TauPyModel(model="iasp91")
 
-# ==== Hàm hiệu chỉnh Cascadia tuyến tính ====
+# ==== Hàm hiệu chỉnh Cascadia (độ dốc nhẹ hơn sau 1°) ====
 def cascadia_correction(p_theo, origin_time, dist_deg):
-    """
-    Hiệu chỉnh tuyến tính dựa vào khoảng cách event–station.
-    - 0.0°: offset = 0s
-    - 1.0°: offset = -12s
-    Không bao giờ lùi qua origin_time.
-    """
-    a = (-12.0 - 0.0) / (1.0 - 0.0)   # slope để 1.0° = -12s
-    b = 0.0
-    offset = a * dist_deg + b
-
-    # Giới hạn offset tối đa
-    offset = max(offset, -20.0)
+    if dist_deg <= 1.0:
+        # 0° → 0s ; 1° → -12s
+        a = (-12.0 - 0.0) / 1.0
+        offset = a * dist_deg
+    else:
+        # 1.0° → -12s ; 1.5° → -12.3s (dịch ít hơn để 1.4° không bị quá sớm)
+        a = (-12.3 - -12.0) / (1.5 - 1.0)
+        offset = -12.0 + a * (dist_deg - 1.0)
 
     p_corr = p_theo + offset
     if p_corr < origin_time:
         p_corr = origin_time
     return p_corr
 
-# ==== Đọc metadata ====
+# ==== Đọc metadata và filter theo độ sâu ====
 stations = []
 with open("obs_orientation_metadata_updated.txt", "r") as f:
     for line in f:
@@ -49,10 +46,15 @@ with open("obs_orientation_metadata_updated.txt", "r") as f:
         end = parts[2].split(": ")[1]
         lat = float(parts[3].split(": ")[1])
         lon = float(parts[4].split(": ")[1])
+        depth = float(parts[5].split(": ")[1])  # đọc depth
         bh1_str = parts[6].split(": ")[1].strip()
         bh1_clean = re.sub(r"[^0-9.\-]", "", bh1_str)
         bh1 = float(bh1_clean) if bh1_clean else 0.0
-        stations.append((st, start, end, lat, lon, bh1))
+
+        if depth < -500:
+            stations.append((st, start, end, lat, lon, bh1))
+
+print(f"📌 Loaded {len(stations)} stations after depth filter")
 
 # ==== Pad ====
 def pad_or_trim(data, expected_samples):
@@ -72,12 +74,14 @@ def create_noise_sample(station_dir, STATION, index, ref_time, fs, expected_samp
             noise_start = ref_time + direction * offset_min
             noise_end = noise_start + 100
 
-            # tránh trùng event
             if any((noise_start <= ev <= noise_end) or (ev <= noise_start <= ev + 60) for ev in event_times):
                 continue
 
             st_noise = client.get_waveforms(NETWORK, STATION, LOCATION, "BH?", 
                                             starttime=noise_start, endtime=noise_end)
+            if len(st_noise) == 0:
+                continue
+
             st_noise.detrend("demean")
             st_noise.filter("bandpass", freqmin=2, freqmax=8)
             for tr in st_noise:
@@ -110,7 +114,7 @@ def create_noise_sample(station_dir, STATION, index, ref_time, fs, expected_samp
     except Exception as e:
         print(f"❌ Noise sample error {STATION}: {e}")
 
-# ==== Loop ====
+# ==== Loop qua các trạm ====
 for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
     start_time = UTCDateTime(start)
     end_time = UTCDateTime(end)
@@ -123,16 +127,17 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
                                 latitude=lat_sta, longitude=lon_sta,
                                 maxradius=MAX_RADIUS, minmagnitude=MIN_MAGNITUDE)
     event_times = [ev.origins[0].time for ev in catalog]
+    print(f"📡 {STATION}: {len(catalog)} events")
 
     for i, event in enumerate(catalog):
         origin = event.origins[0]
         origin_time = origin.time
 
         try:
-            # ==== Tính P-arrival bằng TauP + hiệu chỉnh tuyến tính ====
-            ev_lat = event.origins[0].latitude
-            ev_lon = event.origins[0].longitude
-            ev_depth_km = event.origins[0].depth / 1000.0
+            # ==== Tính P-arrival bằng TauP ====
+            ev_lat = origin.latitude
+            ev_lon = origin.longitude
+            ev_depth_km = origin.depth / 1000.0
 
             dist_deg = locations2degrees(ev_lat, ev_lon, lat_sta, lon_sta)
             arrivals = taup_model.get_travel_times(
@@ -152,6 +157,10 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
             st = client.get_waveforms(NETWORK, STATION, LOCATION, "BH?",
                                       starttime=origin_time - 60,
                                       endtime=origin_time + 420)
+            if len(st) == 0:
+                print(f"⚠️ {STATION} Event {i}: không có waveform, bỏ qua.")
+                continue
+
             st.detrend("demean")
             st.filter("bandpass", freqmin=2, freqmax=8)
             for tr in st:
@@ -159,6 +168,10 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
                 std = np.std(tr.data)
                 if std > 0:
                     tr.data /= std
+
+            if len(st.select(channel="BHZ")) == 0:
+                print(f"⚠️ {STATION} Event {i}: không có BHZ, bỏ qua.")
+                continue
 
             trZ = st.select(channel="BHZ")[0]
             tr1 = st.select(channel="BH1")[0]
@@ -172,6 +185,10 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
 
             # ==== Cắt 100s từ p_arrival ====
             fs = trZ.stats.sampling_rate
+            if fs is None:
+                print(f"⚠️ {STATION} Event {i}: không có sampling_rate, bỏ qua.")
+                continue
+
             frame_len = 5
             total_len = 100
             n_noise = random.randint(1, 5)
