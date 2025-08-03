@@ -3,8 +3,9 @@ import re
 import numpy as np
 from obspy.clients.fdsn import Client
 from obspy import UTCDateTime, Trace
+from obspy.taup import TauPyModel
+from obspy.geodetics import locations2degrees
 from scipy.signal import spectrogram
-from obspy.signal.trigger import classic_sta_lta, trigger_onset
 from PIL import Image, ImageDraw
 
 # ==== Config ====
@@ -16,6 +17,31 @@ os.makedirs("full_spectrogram", exist_ok=True)
 
 MIN_MAGNITUDE = 3
 MAX_RADIUS = 1.5
+
+# ==== TauP model ====
+taup_model = TauPyModel(model="iasp91")
+
+# ==== Hàm hiệu chỉnh Cascadia tuyến tính ====
+def cascadia_correction(p_theo, origin_time, dist_deg):
+    """
+    Hiệu chỉnh P-arrival theo khoảng cách bằng hàm tuyến tính.
+    Đảm bảo không bao giờ lùi qua origin_time.
+    - Ở 1.0°: offset = -12s
+    - Ở 0.0°: offset = 0s (không dịch)
+    """
+
+    # Fit tuyến tính từ (0.0°, 0s) đến (1.0°, -12s)
+    a = (-12.0 - 0.0) / (1.0 - 0.0)   # slope
+    b = 0.0                           # intercept
+
+    offset = a * dist_deg + b
+    # Giới hạn offset tối đa (tránh offset quá lớn cho khoảng cách xa)
+    offset = max(offset, -20.0)
+
+    p_corr = p_theo + offset
+    if p_corr < origin_time:
+        p_corr = origin_time
+    return p_corr
 
 # ==== Đọc file station metadata ====
 stations = []
@@ -58,13 +84,33 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
         origin_time = origin.time
 
         try:
+            # ==== Tính P-arrival với TauP ====
+            ev_lat = origin.latitude
+            ev_lon = origin.longitude
+            ev_depth_km = origin.depth / 1000.0
+            dist_deg = locations2degrees(ev_lat, ev_lon, lat_sta, lon_sta)
+
+            arrivals = taup_model.get_travel_times(
+                source_depth_in_km=ev_depth_km,
+                distance_in_degree=dist_deg,
+                phase_list=["P", "p", "Pn", "Pg"]
+            )
+
+            if arrivals:
+                p_theo = origin_time + arrivals[0].time
+                p_arrival = cascadia_correction(p_theo, origin_time, dist_deg)
+                print(f"Event {i}: TauP P-arrival = {p_arrival} (dist={dist_deg:.2f}°)")
+            else:
+                p_arrival = origin_time + 5.0
+                print(f"⚠️ Event {i}: TauP không có P, fallback = {p_arrival}")
+
             # ==== Load waveform ====
             st = client.get_waveforms(NETWORK, STATION, LOCATION, "BH?",
                                       starttime=origin_time - 60,
                                       endtime=origin_time + 420)
 
             st.detrend("demean")
-            st.filter("bandpass", freqmin=2, freqmax=8)  # filter hẹp hơn để P rõ hơn
+            st.filter("bandpass", freqmin=2, freqmax=8)
             for tr in st:
                 tr.data = tr.data.astype(np.float64)
                 std = np.std(tr.data)
@@ -85,22 +131,6 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
 
             fs = trZ.stats.sampling_rate
 
-            # ==== Lấy 60 giây sau origin để tìm P bằng STA/LTA ====
-            tr_cut = trZ.copy().trim(starttime=origin_time, endtime=origin_time + 60)
-
-            sta_win = int(0.25 * fs)    # 0.5 giây ~ 25 mẫu @ 50Hz
-            lta_win = int(10 * fs)     # 10 giây ~ 500 mẫu
-            cft = classic_sta_lta(tr_cut.data, sta_win, lta_win)
-            trigs = trigger_onset(cft, 2.2, 1.0)
-
-            if len(trigs) > 0:
-                onset_sample = trigs[0][0]
-                p_arrival = tr_cut.stats.starttime + onset_sample / fs
-                print(f"Event {i}: P-onset STA/LTA = {p_arrival}")
-            else:
-                p_arrival = origin_time
-                print(f"Event {i}: Không thấy trigger, dùng Origin = {p_arrival}")
-
             # ==== Spectrogram ====
             specZ, _ = compute_spec(trZ, fs)
             specN, _ = compute_spec(trN, fs)
@@ -115,38 +145,27 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
             spec_stack = (spec_stack - min_val) / (max_val - min_val + 1e-8)
             spec_stack = (spec_stack * 255).astype(np.uint8)
 
-            # Resize
+            # Flip freq axis và resize
             spec_stack = spec_stack[::-1, :, :]
             spec_resized = np.array(Image.fromarray(spec_stack).resize(TARGET_SIZE))
 
-            # ==== Vẽ Origin (đỏ) và P-onset (xanh) ====
+            # ==== Vẽ Origin (đỏ) và P-onset (xanh) ==== 
             window_start = origin_time - 60
             total_duration = 480.0
 
-            # Origin line
             offset_origin = origin_time - window_start
             o_x = int((offset_origin / total_duration) * TARGET_SIZE[0])
 
-            # P-onset line
             offset_p = p_arrival - window_start
             p_x = int((offset_p / total_duration) * TARGET_SIZE[0])
 
-            # Vẽ trên ảnh RGB
             img_rgb = Image.fromarray(spec_resized)
             draw_rgb = ImageDraw.Draw(img_rgb)
             draw_rgb.line([(o_x, 0), (o_x, TARGET_SIZE[1])], fill=(255, 0, 0), width=2)  # đỏ = Origin
-            draw_rgb.line([(p_x, 0), (p_x, TARGET_SIZE[1])], fill=(0, 255, 0), width=2)  # xanh = P-onset
-            img_rgb.save(f"full_spectrogram/{STATION}_eq_{i:03}_CRED_RGB_P.png")
+            draw_rgb.line([(p_x, 0), (p_x, TARGET_SIZE[1])], fill=(0, 255, 0), width=2)  # xanh = TauP P-arrival
+            img_rgb.save(f"full_spectrogram/{STATION}_eq_{i:03}_TauP_RGB.png")
 
-            # Vẽ trên từng kênh riêng
-            for idx, ch in enumerate(["BHZ", "BHN", "BHE"]):
-                img_ch = Image.fromarray(spec_resized[:, :, idx])
-                draw_ch = ImageDraw.Draw(img_ch)
-                draw_ch.line([(o_x, 0), (o_x, TARGET_SIZE[1])], fill=128, width=2)  # Origin xám
-                draw_ch.line([(p_x, 0), (p_x, TARGET_SIZE[1])], fill=255, width=2)  # P-onset trắng
-                img_ch.save(f"full_spectrogram/{STATION}_eq_{i:03}_{ch}_P.png")
-
-            print(f"✅ Saved {STATION} event {i} spectrogram (Origin+P-onset lines)")
+            print(f"✅ Saved {STATION} event {i} spectrogram (TauP + Cascadia linear correction)")
 
         except Exception as e:
             print(f"❌ Lỗi {STATION} event {i}: {e}")
