@@ -53,6 +53,7 @@ models/
 *.mseed
 *.sac
 data/
+*.zip
 dataset/
 *.jpg
 *.jpeg
