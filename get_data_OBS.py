@@ -158,10 +158,11 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
     catalog = client.get_events(starttime=start_time, endtime=end_time,
                                 latitude=lat_sta, longitude=lon_sta,
                                 maxradius=MAX_RADIUS, minmagnitude=MIN_MAGNITUDE)
-    event_times = [ev.origins[0].time for ev in catalog]
     print(f"📡 {STATION}: {len(catalog)} events")
 
-    for i, event in enumerate(catalog):
+    events_sorted = sorted(catalog, key=lambda e: e.origins[0].time)
+    event_times = [ev.origins[0].time for ev in events_sorted]
+    for i, event in enumerate(events_sorted):
         origin = event.origins[0]
         origin_time = origin.time
 

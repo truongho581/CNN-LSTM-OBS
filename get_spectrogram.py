@@ -78,7 +78,8 @@ for STATION, start, end, lat_sta, lon_sta, bh1_angle in stations:
                                 latitude=lat_sta, longitude=lon_sta,
                                 maxradius=MAX_RADIUS, minmagnitude=MIN_MAGNITUDE)
 
-    for i, event in enumerate(catalog):
+    events_sorted = sorted(catalog, key=lambda e: e.origins[0].time)
+    for i, event in enumerate(events_sorted):
         origin = event.origins[0]
         origin_time = origin.time
 
