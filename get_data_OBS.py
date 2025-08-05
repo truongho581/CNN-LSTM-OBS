@@ -14,7 +14,7 @@ BASE_DIR = "data"
 MSEED_DIR = "mseed_data"
 TARGET_SIZE = (64, 64)
 NUM_FRAMES = 30
-FRAME_LEN = 1.0  # seconds
+FRAME_LEN = 2.0  # seconds
 model = PickBlue(base="eqtransformer")
 
 # ==== Spectrogram ====
@@ -25,8 +25,8 @@ def make_spectrogram(data, fs, fmin=2, fmax=10):
     f_mask = (f >= fmin) & (f <= fmax)
     Sxx = Sxx[f_mask, :]
     Sxx_db = 10 * np.log10(Sxx + 1e-10)
-    Sxx_db = np.clip(Sxx_db, -80, -60)
-    Sxx_norm = (Sxx_db + 80) / 40
+    Sxx_db = np.clip(Sxx_db, -80, 60)
+    Sxx_norm = (Sxx_db + 80) / 140
     img = Image.fromarray((Sxx_norm * 255).astype(np.uint8))
     img = img.resize(TARGET_SIZE, Image.LANCZOS)
     return np.array(img, dtype=np.float32) / 255.0
@@ -62,9 +62,10 @@ def process_eq_sample(station, index):
         print(f"⚠️ Không tìm thấy PickBlue P-onset cho {station}_eq_{index:03}")
         return
 
-    offset = random.randint(1, 5)
-    start_cut = p_pick_time - offset
-    end_cut = start_cut + NUM_FRAMES
+    # ✅ Tính offset chính xác theo giây và frame
+    offset_sec = random.uniform(0, 10)
+    start_cut = p_pick_time - offset_sec
+    end_cut = start_cut + NUM_FRAMES * FRAME_LEN
 
     trZ = trZ.trim(start_cut, end_cut, pad=True, fill_value=0)
     trN = trN.trim(start_cut, end_cut, pad=True, fill_value=0)
@@ -83,7 +84,11 @@ def process_eq_sample(station, index):
         spec_frames.append(spec_rgb)
 
     spec_seq = np.stack(spec_frames, axis=0)
-    labels = [0] * offset + [1] * (NUM_FRAMES - offset)
+
+    # ✅ Gán nhãn chuẩn từ frame chứa P-onset
+    offset_frame = int(offset_sec // FRAME_LEN)
+    offset_frame = min(offset_frame, NUM_FRAMES)
+    labels = [0] * offset_frame + [1] * (NUM_FRAMES - offset_frame)
 
     out_dir = f"{BASE_DIR}/{station}/eq_{index:03}"
     os.makedirs(out_dir, exist_ok=True)
@@ -91,7 +96,8 @@ def process_eq_sample(station, index):
     with open(os.path.join(out_dir, "label.txt"), "w") as f:
         f.write(" ".join(map(str, labels)))
 
-    print(f"✅ EQ saved: {station}_eq_{index:03} (offset={offset})")
+    print(f"✅ EQ saved: {station}_eq_{index:03} (offset_frame={offset_frame})")
+
 
 # ==== Process noise sample từ file path ====
 def process_noise_file(filepath, station, index):

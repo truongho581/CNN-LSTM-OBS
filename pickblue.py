@@ -54,8 +54,8 @@ f, t_spec, Sxx = spectrogram(tr.data, fs=fs, nperseg=256, noverlap=128)
 Sxx_db = 10 * np.log10(Sxx + 1e-10)
 
 plt.figure(figsize=(12, 6))
-plt.pcolormesh(t_spec, f, Sxx_db, shading="gouraud", cmap="viridis")
-plt.ylim(2, 10)  # 🔍 Chỉ vẽ từ 2–10 Hz
+plt.pcolormesh(t_spec, f, Sxx_db, shading="gouraud", cmap="viridis", vmin=-100, vmax=60)
+plt.ylim(0, 15)  # 🔍 Chỉ vẽ từ 2–10 Hz
 plt.ylabel("Frequency (Hz)")
 plt.xlabel("Time (s)")
 plt.colorbar(label="Power (dB)")

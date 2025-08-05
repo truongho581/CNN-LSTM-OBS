@@ -1,24 +1,37 @@
-from obspy import read
+from OBS_station import start_time, end_time, client, LOCATION, NETWORK, CHANNEL, station_data
+from obspy.geodetics import locations2degrees
 
-# Thay bằng đường dẫn file mseed của bạn
-file_path = "mseed_data/G03A/G03A_eq_006.mseed"
+# ==== Cấu hình ====
+STATION, lat, lon, elev = station_data
+radius = 0       # bán kính tối thiểu (~220 km)
+max_radius = 2   # bán kính tối đa (~1110 km)
+minmagni = 2.5     # độ lớn tối thiểu
 
-# Đọc file
-st = read(file_path)
+# ==== Truy vấn catalog sự kiện ====
+catalog = client.get_events(
+    starttime=start_time,
+    endtime=end_time,
+    latitude=lat,
+    longitude=lon,
+    minradius=radius,
+    maxradius=max_radius,
+    minmagnitude=minmagni
+)
 
-print(f"\n📄 File: {file_path}")
-print(f"📚 Tổng số trace: {len(st)}\n")
+# ==== Sắp xếp theo thời gian ====
+catalog.events.sort(key=lambda e: e.origins[0].time)
 
-for i, tr in enumerate(st):
-    stats = tr.stats
-    print(f"🔹 Trace {i+1}")
-    print(f"  ➤ Network  : {stats.network}")
-    print(f"  ➤ Station  : {stats.station}")
-    print(f"  ➤ Location : {stats.location}")
-    print(f"  ➤ Channel  : {stats.channel}")
-    print(f"  ➤ Start    : {stats.starttime}")
-    print(f"  ➤ End      : {stats.endtime}")
-    print(f"  ➤ Sampling : {stats.sampling_rate} Hz")
-    print(f"  ➤ Npts     : {stats.npts}")
-    duration = stats.endtime - stats.starttime
-    print(f"  ➤ Duration : {duration:.2f} s\n")
+# ==== In kết quả ====
+if __name__ == "__main__":
+    print(f"---🔍 Tổng cộng {len(catalog)} sự kiện---\n")
+
+    for i, event in enumerate(catalog):
+        origin = event.origins[0]
+        origin_time = origin.time
+        magnitude = event.magnitudes[0].mag
+        lat_eq = origin.latitude
+        lon_eq = origin.longitude
+
+        dist_deg = locations2degrees(lat, lon, lat_eq, lon_eq)
+
+        print(f"{i:02d}. ⏰ {origin_time} | M = {magnitude:.1f} | Dist = {dist_deg:.2f}°")
