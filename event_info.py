@@ -1,25 +1,24 @@
-# Lấy thông tin về thời gian, độ lớn của sự kiện 
-from OBS_station import start_time, end_time, client, LOCATION, NETWORK, CHANNEL, station_data
+from obspy import read
 
-STATION, lat, lon, elev = station_data
-radius = 1.5  # Bán kính khoảng 220km
-minmagni = 2.5 # Độ lớn của địa chấn
+# Thay bằng đường dẫn file mseed của bạn
+file_path = "mseed_data/G03A/G03A_eq_006.mseed"
 
-catalog = client.get_events(starttime=start_time,
-                            endtime=end_time,
-                            latitude=lat,
-                            longitude=lon,
-                            maxradius=radius,
-                            minmagnitude=minmagni)
+# Đọc file
+st = read(file_path)
 
-# Sắp xếp theo thời gian tăng dần
-catalog.events.sort(key=lambda e: e.origins[0].time)
+print(f"\n📄 File: {file_path}")
+print(f"📚 Tổng số trace: {len(st)}\n")
 
-if __name__ == "__main__":
-    print(f"---🔍 Tổng cộng {len(catalog)} sự kiện---")
-
-for i, event in enumerate(catalog):
-    origin_time = event.origins[0].time
-    magnitude = event.magnitudes[0].mag
-    if __name__ == "__main__":
-        print(f"{i:02d}. ⏰ {origin_time} | M = {magnitude}")
+for i, tr in enumerate(st):
+    stats = tr.stats
+    print(f"🔹 Trace {i+1}")
+    print(f"  ➤ Network  : {stats.network}")
+    print(f"  ➤ Station  : {stats.station}")
+    print(f"  ➤ Location : {stats.location}")
+    print(f"  ➤ Channel  : {stats.channel}")
+    print(f"  ➤ Start    : {stats.starttime}")
+    print(f"  ➤ End      : {stats.endtime}")
+    print(f"  ➤ Sampling : {stats.sampling_rate} Hz")
+    print(f"  ➤ Npts     : {stats.npts}")
+    duration = stats.endtime - stats.starttime
+    print(f"  ➤ Duration : {duration:.2f} s\n")
