@@ -9,7 +9,7 @@ import re
 model = PickBlue(base="eqtransformer")
 
 # 📥 Đọc waveform từ file .mseed
-st = read("mseed_data/G30A/G30A_eq_002.mseed")
+st = read("mseed_data/G30A/G30A_eq_003.mseed")
 tr = st.select(channel="BHZ")[0]
 starttime = tr.stats.starttime
 fs = tr.stats.sampling_rate
@@ -53,9 +53,9 @@ for pick in result.picks:
 f, t_spec, Sxx = spectrogram(tr.data, fs=fs, nperseg=256, noverlap=128)
 Sxx_db = 10 * np.log10(Sxx + 1e-10)
 
-plt.figure(figsize=(12, 6))
-plt.pcolormesh(t_spec, f, Sxx_db, shading="gouraud", cmap="viridis", vmin=-100, vmax=60)
-plt.ylim(0, 15)  # 🔍 Chỉ vẽ từ 2–10 Hz
+plt.figure(figsize=(18, 6))
+plt.pcolormesh(t_spec, f, Sxx_db, shading="gouraud", cmap="viridis", vmin=-80, vmax=80)
+plt.ylim(2, 10)  # 🔍 Chỉ vẽ từ 2–10 Hz
 plt.ylabel("Frequency (Hz)")
 plt.xlabel("Time (s)")
 plt.colorbar(label="Power (dB)")

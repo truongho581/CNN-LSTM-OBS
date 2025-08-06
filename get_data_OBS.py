@@ -14,7 +14,7 @@ BASE_DIR = "data"
 MSEED_DIR = "mseed_data"
 TARGET_SIZE = (64, 64)
 NUM_FRAMES = 30
-FRAME_LEN = 2.0  # seconds
+FRAME_LEN = 3.0  # seconds
 model = PickBlue(base="eqtransformer")
 
 # ==== Spectrogram ====
@@ -25,8 +25,8 @@ def make_spectrogram(data, fs, fmin=2, fmax=10):
     f_mask = (f >= fmin) & (f <= fmax)
     Sxx = Sxx[f_mask, :]
     Sxx_db = 10 * np.log10(Sxx + 1e-10)
-    Sxx_db = np.clip(Sxx_db, -80, 60)
-    Sxx_norm = (Sxx_db + 80) / 140
+    Sxx_db = np.clip(Sxx_db, -80, 80)
+    Sxx_norm = (Sxx_db + 80) / 160
     img = Image.fromarray((Sxx_norm * 255).astype(np.uint8))
     img = img.resize(TARGET_SIZE, Image.LANCZOS)
     return np.array(img, dtype=np.float32) / 255.0
