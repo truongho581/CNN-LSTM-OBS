@@ -14,12 +14,12 @@ BASE_DIR = "data"
 MSEED_DIR = "mseed_data"
 TARGET_SIZE = (64, 64)
 NUM_FRAMES = 30
-FRAME_LEN = 3.0  # seconds
+FRAME_LEN = 2.0  # seconds
 model = PickBlue(base="eqtransformer")
 
 # ==== Spectrogram ====
 def make_spectrogram(data, fs, fmin=2, fmax=10):
-    nperseg = int(0.2* fs)
+    nperseg = int(0.4* fs)
     noverlap = int(0.5 * nperseg)
     f, t, Sxx = spectrogram(data, fs=fs, nperseg=nperseg, noverlap=noverlap)
     f_mask = (f >= fmin) & (f <= fmax)

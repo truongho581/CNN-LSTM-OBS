@@ -2,24 +2,30 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # === Cấu hình ===
-npz_path = "data/FS01B/eq_005/sample.npz"  # 🔁 Thay đường dẫn tại đây nếu cần
+npz_path = "data/FS01B/eq_002/sample.npz"
 NUM_FRAMES = 30
+SAVE_PATH = "figure_rgb_frames_compact.png"
 
-# === Tải dữ liệu ===
+# === Load dữ liệu ===
 data = np.load(npz_path)
-spec_seq = data['spec']  # shape: (30, 64, 64, 3)
+spec_seq = data['spec']
 
-# === Kiểm tra shape ===
-print(f"Shape: {spec_seq.shape} (frames, height, width, channels)")
-
-# === Vẽ 30 frames RGB ===
-n_cols = 6
+# === Vẽ 20 frames RGB với spacing nhỏ ===
+n_cols = 5
 n_rows = (NUM_FRAMES + n_cols - 1) // n_cols
-plt.figure(figsize=(15, 8))
-for i in range(NUM_FRAMES):
-    plt.subplot(n_rows, n_cols, i+1)
-    plt.imshow(spec_seq[i])
-    plt.axis("off")
-    plt.title(f"Frame {i}")
-plt.tight_layout()
-plt.show()
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(10, 10))
+
+# 👉 Giảm khoảng cách giữa các subplot
+plt.subplots_adjust(wspace=0.05, hspace=0.2)
+
+for i in range(n_rows * n_cols):
+    row = i // n_cols
+    col = i % n_cols
+    ax = axes[row, col]
+    if i < NUM_FRAMES:
+        ax.imshow(spec_seq[i])
+    ax.axis("off")
+
+plt.savefig(SAVE_PATH, dpi=300, bbox_inches="tight")
+print(f"✅ Saved compact figure to {SAVE_PATH}")
+plt.close()
